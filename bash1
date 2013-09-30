@@ -1,0 +1,88 @@
+#!/bin/bash
+
+# Service functions ###########################################################
+# Link a key code to a function in the OPerations map
+ACTON()    { if [ -n "$3" ]; then OP[1,$1]=$2; else OP[0,$1]=$2; fi;          }
+# Link a key char to a function in the OPerations map
+ACTION()   { ACTON `ORD $1` $2 $3;                                            }
+# Convert a code to a char
+CHR()      { printf \\$(printf '%03o' $1);                                    }
+# Convert a char to a code
+ORD()      { printf '%d' "'$1";                                               }
+# Initialize the OPerations map to all NOOPs.
+CLEAR()    { for j in 0 1; do for i in $CHARS; do OP[$j,$i]=NOOP; done; done; }
+# Get a single key from the keyboard in both char and code form
+READ()     { read -s -N 1 K; C=`ORD $K`;                                      }
+# Toggle NOOP echo on/off
+ECHO()     { if [[ $E == true ]]; then E=false; else E=true; fi;              }
+# Show character for ECHO
+SHOW()      {
+    if [ $E == false ]; then return; fi;
+    if [ $F == NOOP ]; then                          #        Echo char somehow
+        if [[ $C -ge 128 ]]; then C=$(($C - 128)); echo -n 'A-'; fi;
+        if [[ $C -ge 32 && $C -le 127 ]]; then echo -n `CHR $C`;
+        elif [[ $C -ge 1 && $C -le 26 ]]; then echo -n "C-`CHR $(($C + 64))`";
+        else echo 'NP';
+        fi
+    fi
+    A=0;                                             #     Revert to non-Escape
+}
+
+# Core functions ##############################################################
+# Index function from OPerations map, and run it.
+EVAL()      {
+    CLEAR; LOAD;                                     #      Build new menu list
+    F=${OP[$A,$C]}                                   #       Get index function
+    if [ $C -eq 27 ]; then A=1; return; fi;          #       Handle Escape char
+    SHOW;
+    if [ $F != NOOP ]; then eval $F; fi;             #        Echo char somehow
+    A=0;                                             #     Revert to non-Escape
+}
+# Show the current menu options.
+MENU()      {
+    for i in $CHARS; do
+        F="${OP[0,$i]}";
+        if [ $F != NOOP ]; then echo "$i `CHR $i`: $F"; fi;
+    done;
+    for i in $CHARS; do
+        F="${OP[1,$i]}";
+        if [ $F != NOOP ]; then echo "27:$i A-`CHR $i`: $F"; fi;
+    done;
+}
+# Load the ACTIONS list following the "exit" in this file's tail.
+LOAD()      {
+    USE=false                                        #            Wait for exit
+    while read -r line; do                           #     Read this file again
+        line=`echo $line|tr -d '\n\r'|cut -f1 -d"#"` # Strip #comments/newlines
+        first=${line::1}                             #           Get first char
+        if [ "$first" == "" ]; then continue; fi     #       Ignore empty lines
+        if [ $USE == true ]; then eval $line; fi     #    Execute link function
+        if [ "$line" == "exit" ]; then USE=true; fi  #   Find linkage beginning
+    done < "$0";                                     #         From this script
+}
+MAIN()      { # main loop
+    trap '' 2;                                       #     Prevent ^C interrupt
+    declare -A OP;
+    CHARS=`seq 0 255`
+    LOOPING=1; A=0; E=false;                         #         Initialize flags
+    while [[ $LOOPING == 1 ]]; do READ; EVAL; done;  #           READ/EVAL loop
+    trap 2;                                          #       Allow ^C interrupt
+}
+
+# Menu targets
+LS()        { ls;                                                             }
+NOOP()      { echo > /dev/null;                                               }
+DIR()       { pwd;                                                            }
+QUIT()      { echo; LOOPING=0;                                                }
+
+# Begin processing
+MAIN
+exit
+###############################################################################
+# ACTIONS to perform from the menu.  Updates to this are instantly used.
+ACTION e ECHO
+ACTION q QUIT;
+ACTION l LS;
+ACTION d DIR;
+ACTION m MENU;
+ACTION e QUIT ESC; # Third arg mounts it on second tier.
